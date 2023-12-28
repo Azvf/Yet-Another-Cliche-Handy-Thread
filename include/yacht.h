@@ -66,16 +66,18 @@ enum TimerMode {
 	Timer_Included = 1,
 };
 
-// TODO: 只能支持有if constexpr的C++版本
+/**
+* @todo
+*/
 enum TaskMode {
-	Run_Once_Task = 0,
-	Timer_Task = 1,
+	Run_Once_Task	= 0,
+	Timer_Task		= 1,
 };
 
 enum TaskStatus {
-	None_Task = 1,
-	Task_Assigned = 1 << 1,
-	Task_Running = 1 << 2,
+	None_Task		= 1,
+	Task_Assigned	= 1 << 1,
+	Task_Running	= 1 << 2,
 };
 
 /**
@@ -134,7 +136,6 @@ public:
 	virtual ~HandyThread() {
 		// 线程中调用SendMessage会导致join死锁?
 		Stop();
-		std::cout << "~HandyThread" << std::endl;
 	}
 
 public:
@@ -708,13 +709,13 @@ protected:
 	};
 
 protected:
-	std::mutex m_dataMutex = {};
-	std::mutex m_stateMutex = {};
+	std::mutex m_dataMutex;
+	std::mutex m_stateMutex;
 	std::shared_ptr<std::function<void()>> m_task;
 	std::unique_ptr<std::future<void>> m_fut;
 	std::atomic<bool> m_bStopThread = false;
 
 	ThreadConfig m_config;
-	std::unordered_map<ConfigType, std::string> m_confmap = {};
+	std::unordered_map<ConfigType, std::string> m_confmap;
 	std::unique_ptr<HandyThread> m_cb;
 };
