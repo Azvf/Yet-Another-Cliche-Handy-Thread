@@ -372,9 +372,9 @@ public:
 
 	/**
 	* @brief: 重置HandyThread
+	* @todo
 	*/
 	void Reset() {
-		// TODO
 	}
 
 	/**
@@ -515,7 +515,7 @@ private:
 				break;
 			}
 
-			// TODO: 提供用户接口做额外的条件判定和状态处理?
+			// @todo: 提供用户接口做额外的条件判定和状态处理?
 
 			if (real_fut.wait_for(100ms) == std::future_status::ready) {
 				break;
@@ -697,7 +697,6 @@ protected:
 protected:
 	/**
 	* @brief: 线程配置
-	* @warning: deprecating, 改造完老代码后将不再对外暴露
 	*/
 	struct ThreadConfig {
 		int32_t delay				= 0;				// ms
