@@ -226,7 +226,7 @@ public:
 					);
 					return;
 				}
-		);
+			);
 		// if (mode == Run_Once_Task) {	// 一次性任务
 		// 	m_task = 
 		// 		std::make_shared<std::function<void()>>(
@@ -485,7 +485,7 @@ private:
 
 	/**
 	* @brief: 限时任务模块化实现
-	* @TODO: 有需求可优化轮询时间粒度
+	* @todo: 有需求可优化轮询时间粒度
 	*/
 	template <
 		class _Target
