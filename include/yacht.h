@@ -1,15 +1,17 @@
 #pragma once
 
+#include "ustl.h"
+
+#include <utility>
+#include <type_traits>
+#include <cassert>
 #include <thread>
 #include <future>
 #include <memory>
 #include <atomic>
 #include <mutex>
 #include <chrono>
-#include <utility>
 #include <tuple>
-#include <type_traits>
-#include <cassert>
 #include <unordered_map>
 #include <cstdlib>
 
@@ -47,6 +49,8 @@ template<class... Ts>
 std::tuple<Ts...> deep_copy(const std::tuple<Ts...>& t) {
 	return deep_copy_impl(t, std::index_sequence_for<Ts...>());
 }
+
+#define FUNC() [&](auto... Ts) { return x(Ts...);}
 
 /**
 * @brief: 定时器时间计算模式
@@ -144,7 +148,7 @@ public:
 	// * @warning: deprecated
 	// */
 	// void SetThreadConfig(const ThreadConfig& config) {
-	// 	std::lock_guard<std::mutex> lk(m_dataMutex);
+	// 	std::lock_guard<std::mutex> lk(m_data_mut);
 	// 	m_config = config;
 	// }
 
@@ -153,7 +157,7 @@ public:
 	// * @depreacted
 	// */
 	// ThreadConfig ThreadConfigInfo() {
-	// 	std::lock_guard<std::mutex> lk(m_dataMutex);
+	// 	std::lock_guard<std::mutex> lk(m_data_mut);
 	// 	return m_config;
 	// }
 
@@ -161,7 +165,7 @@ public:
 	* @brief: 设置线程配置接口2
 	*/
 	decltype(auto) SetConfig(ConfigType config_type, const std::string& config_value) {
-		std::lock_guard<std::mutex> lk(m_dataMutex);
+		std::lock_guard<std::mutex> lk(m_data_mut);
 		m_confmap[config_type] = config_value;
 		ConfigParse();
 		return this;
@@ -175,7 +179,7 @@ public:
 		class...	_Args
 	>
 	decltype(auto) SetCallbackCtx(_Fn&& _Fx, _Args&&... _Ax) {
-		std::lock_guard<std::mutex> lk(m_dataMutex);
+		std::lock_guard<std::mutex> lk(m_data_mut);
 		m_cb = std::make_unique<HandyThread>();
 		m_cb->SetConfig(Deferred_Config, "1")
 			->SetConfig(Detached_Config, m_config.cb_detached ? "1" : "0")
@@ -200,133 +204,23 @@ public:
 	// }
 
 	/**
-	* @brief: (原神)启动
-	*/
+	 * @brief: (原神)启动
+	 */
 	template <
 		class		_Fn,
 		class...	_Args
 	>
-	void Run(_Fn&& _Fx, _Args&&... _Ax) {
-		std::lock_guard<std::mutex> lk(m_stateMutex);
-		ConfigParse();
-
-		if (m_fut) {
-			assert(0 && "thread still runing!");
-			return;
-		}
-
-		m_bStopThread = false;
-		m_task =
-			std::make_shared<std::function<void()>>(
-				[this, _Fx = std::forward<_Fn>(_Fx), _Ax = std::make_tuple(std::forward<_Args>(_Ax)...)]() mutable -> void {
-					TypicalRunOnceTask(
-						std::make_unique<std::tuple<std::decay_t<_Fn>, std::decay_t<_Args>...>>(
-							std::tuple_cat(std::make_tuple(_Fx), _Ax)
-						)
-					);
-					return;
-				}
-			);
-		// if (mode == Run_Once_Task) {	// 一次性任务
-		// 	m_task = 
-		// 		std::make_shared<std::function<void()>>(
-		// 			[this, _Fx = std::forward<_Fn>(_Fx), _Ax = std::make_tuple(std::forward<_Args>(_Ax)...)]() mutable -> void {
-		// 				TypicalRunOnceTask(
-		// 					std::make_unique<std::tuple<std::decay_t<_Fn>, std::decay_t<_Args>...>>(
-		// 						std::tuple_cat(std::make_tuple(_Fx), _Ax)
-		// 					)
-		// 				);
-		// 				return;
-		// 			}
-		// 		);
-		// }
-		// else if (mode == Timer_Task) {	// 定时器任务
-		// 	m_task = 
-		// 		std::make_shared<std::function<void()>>(
-		// 			[this, _Fx = std::forward<_Fn>(_Fx), _Ax = std::make_tuple(std::forward<_Args>(_Ax)...)]() mutable -> void {
-		// 				TypicalTimerTask(
-		// 					std::make_unique<std::tuple<std::decay_t<_Fn>, std::decay_t<_Args>...>>(
-		// 						std::tuple_cat(std::make_tuple(_Fx), _Ax)
-		// 					)
-		// 				);
-		// 				return;
-		// 			}
-		// 		);
-		// }
-
-		std::lock_guard<std::mutex> lk2(m_dataMutex);
-		if (!m_fut && !m_config.deferred) {
-			InnerLaunch();
-		}
-	}
-
-	template <
-		class		_Fn,
-		class...	_Args
-	>
-	void RunTimerTask(_Fn&& _Fx, _Args&&... _Ax) {
-		std::lock_guard<std::mutex> lk(m_stateMutex);
-		ConfigParse();
-
-		if (m_fut) {
-			assert(0 && "thread still runing!");
-			return;
-		}
-
-		m_bStopThread = false;
-		m_task =
-			std::make_shared<std::function<void()>>(
-				[this, _Fx = std::forward<_Fn>(_Fx), _Ax = std::make_tuple(std::forward<_Args>(_Ax)...)]() mutable -> void {
-					TypicalTimerTask(
-						std::make_unique<std::tuple<std::decay_t<_Fn>, std::decay_t<_Args>...>>(
-							std::tuple_cat(std::make_tuple(_Fx), _Ax)
-						)
-					);
-					return;
-				}
-		);
-
-		std::lock_guard<std::mutex> lk2(m_dataMutex);
-		if (!m_fut && !m_config.deferred) {
-			InnerLaunch();
-		}
-	}
-
-	template <
-		class		_Fn,
-		class...	_Args
-	>
-	void RunTaskWithTimeout(int32_t time_limit, _Fn&& _Fx, _Args&&... _Ax) {
-		std::lock_guard<std::mutex> lk(m_stateMutex);
-		ConfigParse();
-
-		if (m_fut) {
-			assert(0 && "thread still runing!");
-			return;
-		}
-
-		if (time_limit < 0) {
-			assert(0 && "invalid time limit!");
-			return;
-		}
-
-		m_bStopThread = false;
-		m_task =
-			std::make_shared<std::function<void()>>(
-				[this, time_limit = time_limit, _Fx = std::forward<_Fn>(_Fx), _Ax = std::make_tuple(std::forward<_Args>(_Ax)...)]() mutable -> void {
-					TypicalTaskWithTimeout(
-						time_limit,
-						std::make_unique<std::tuple<std::decay_t<_Fn>, std::decay_t<_Args>...>>(
-							std::tuple_cat(std::make_tuple(_Fx), _Ax)
-						)
-					);
-					return;
-				}
-		);
-
-		std::lock_guard<std::mutex> lk2(m_dataMutex);
-		if (!m_fut && !m_config.deferred) {
-			InnerLaunch();
+	void Run(TaskMode mode, _Fn&& _Fx, _Args&&... _Ax) {
+		switch (mode) {
+		case Run_Once_Task:
+			std::invoke(&HandyThread::RunOnce<_Fn, _Args...>, this, std::forward<_Fn>(_Fx), std::forward<_Args>(_Ax)...);
+			break;
+		case Timer_Task:
+			std::invoke(&HandyThread::RunTimerTask<_Fn, _Args...>, this, std::forward<_Fn>(_Fx), std::forward<_Args>(_Ax)...);
+			break;
+		default:
+			assert(0);
+			break;
 		}
 	}
 
@@ -334,13 +228,13 @@ public:
 	* @brief: 停止线程
 	*/
 	void Stop() {
-		std::unique_lock<std::mutex> lk(m_stateMutex);
+		std::unique_lock<std::mutex> lk(m_state_mut);
 		if (m_task) {
 			if (!m_config.detached && m_fut && m_fut->valid()) {
-				m_bStopThread = true;
+				m_stop = true;
 				m_fut->wait();
-				m_fut = nullptr;
-				m_bStopThread = false;
+				m_fut = ustl::nullopt;
+				m_stop = false;
 			}
 		}
 	}
@@ -349,7 +243,7 @@ public:
 	* @brief: 等待线程
 	*/
 	void Wait(int32_t time = -1) {
-		std::unique_lock<std::mutex> lk(m_stateMutex);
+		std::unique_lock<std::mutex> lk(m_state_mut);
 		InnerWait(time);
 	}
 
@@ -366,7 +260,7 @@ public:
 	*/
 	template<class... _Placeholders>
 	void Launch(_Placeholders&&... _Phs) {
-		std::lock_guard<std::mutex> lk(m_stateMutex);
+		std::lock_guard<std::mutex> lk(m_state_mut);
 		InnerLaunch(std::forward<_Placeholders>(_Phs)...);
 	}
 
@@ -375,14 +269,15 @@ public:
 	* @todo
 	*/
 	void Reset() {
+		assert(0);
 	}
 
 	/**
 	* @brief: 获取状态
 	*/
 	TaskStatus Status() {
-		std::lock_guard<std::mutex> lk(m_stateMutex);
-		std::lock_guard<std::mutex> lk2(m_dataMutex);
+		std::lock_guard<std::mutex> lk(m_state_mut);
+		std::lock_guard<std::mutex> lk2(m_data_mut);
 		if (!m_task) {
 			return None_Task;
 		}
@@ -400,6 +295,155 @@ public:
 	}
 
 private:
+	template <
+		class		_Fn,
+		class...	_Args
+	>
+	void RunOnce(_Fn&& _Fx, _Args&&... _Ax) {
+		std::lock_guard<std::mutex> lk(m_state_mut);
+		ConfigParse();
+
+		if (m_fut) {
+			assert(0 && "thread still runing!");
+			return;
+		}
+
+		m_stop = false;
+		m_task = [this, _Fx = std::forward<_Fn>(_Fx), _Ax = std::make_tuple(std::forward<_Args>(_Ax)...)]() mutable -> void {
+			TypicalRunOnceTask(
+				std::make_unique<std::tuple<std::decay_t<_Fn>, std::decay_t<_Args>...>>(
+					std::tuple_cat(std::make_tuple(_Fx), _Ax)
+				)
+			);
+			};
+
+		std::lock_guard<std::mutex> lk2(m_data_mut);
+		if (!m_fut && !m_config.deferred) {
+			InnerLaunch();
+		}
+	}
+
+#if _HAS_CXX17  
+	template <
+		class		_Fn,
+		class...	_Args
+	>
+	void RunTimerTask(_Fn&& _Fx, _Args&&... _Ax) {
+		std::lock_guard<std::mutex> lk(m_state_mut);
+		ConfigParse();
+
+		if (m_fut) {
+			assert(0 && "thread still runing!");
+			return;
+		}
+
+		m_stop = false;
+
+		if constexpr (std::is_convertible_v<bool, std::invoke_result_t<_Fn, _Args...>>) {
+			m_task = [this, _Fx = std::forward<_Fn>(_Fx), _Ax = std::make_tuple(std::forward<_Args>(_Ax)...)]() mutable -> void {
+					TypicalTimerTask(
+						std::make_unique<std::tuple<std::decay_t<_Fn>, std::decay_t<_Args>...>>(
+							std::tuple_cat(std::make_tuple(_Fx), _Ax)
+						)
+					);
+				};
+		}
+		else if constexpr (std::is_same_v<void, std::invoke_result_t<_Fn, _Args...>>) {
+			auto fn_with_default_ret = [fx = std::move(_Fx)](_Args&&... args) {
+				std::invoke(fx, std::forward<_Args>(args)...);
+				return true;
+				};
+
+			using default_fn_type = decltype(fn_with_default_ret);
+
+			m_task = [this, _Fx = std::forward<default_fn_type>(fn_with_default_ret), _Ax = std::make_tuple(std::forward<_Args>(_Ax)...)]() mutable -> void {
+						TypicalTimerTask(
+							std::make_unique<std::tuple<std::decay_t<default_fn_type >, std::decay_t<_Args>...>>(
+								std::tuple_cat(std::make_tuple(_Fx), _Ax)
+							)
+						);
+					};
+		}
+		else {
+			static_assert(0 && "unknown return value");
+		}
+
+		std::lock_guard<std::mutex> lk2(m_data_mut);
+		if (!m_fut && !m_config.deferred) {
+			InnerLaunch();
+		}
+	}
+#else
+	template <
+		class		_Fn,
+		class...	_Args,
+		std::enable_if_t<std::is_convertible<decltype(std::invoke(std::declval<_Fn>(), std::declval<_Args>()...)), bool>::value, int> = 0
+	>
+	void RunTimerTask(_Fn&& _Fx, _Args&&... _Ax) {
+		std::lock_guard<std::mutex> lk(m_state_mut);
+		ConfigParse();
+
+		if (m_fut) {
+			assert(0 && "thread still runing!");
+			return;
+		}
+
+		m_stop = false;
+		m_task = [this, _Fx = std::forward<_Fn>(_Fx), _Ax = std::make_tuple(std::forward<_Args>(_Ax)...)]() mutable -> void {
+					TypicalTimerTask(
+						std::make_unique<std::tuple<std::decay_t<_Fn>, std::decay_t<_Args>...>>(
+							std::tuple_cat(std::make_tuple(_Fx), _Ax)
+						)
+					);
+				};
+
+		std::lock_guard<std::mutex> lk2(m_data_mut);
+		if (!m_fut && !m_config.deferred) {
+			InnerLaunch();
+		}
+	}
+
+	template <
+		class		_Fn,
+		class...	_Args,
+		std::enable_if_t<std::is_void<decltype(std::invoke(std::declval<_Fn>(), std::declval<_Args>()...))>::value, int> = 0
+	>
+	void RunTimerTask(_Fn&& _Fx, _Args&&... _Ax) {
+		std::lock_guard<std::mutex> lk(m_state_mut);
+		ConfigParse();
+
+		if (m_fut) {
+			assert(0 && "thread still runing!");
+			return;
+		}
+
+		m_stop = false;
+
+		auto fn_with_default_ret = [fx = std::move(_Fx)](_Args&&... args) {
+			std::invoke(fx, std::forward<_Args>(args)...);
+			return true;
+			};
+
+		using default_fn_type = decltype(fn_with_default_ret);
+
+		m_task = [this, _Fx = std::forward<default_fn_type>(fn_with_default_ret), _Ax = std::make_tuple(std::forward<_Args>(_Ax)...)]() mutable -> void {
+					TypicalTimerTask(
+						std::make_unique<std::tuple<std::decay_t<default_fn_type >, std::decay_t<_Args>...>>(
+							std::tuple_cat(std::make_tuple(_Fx), _Ax)
+						)
+					);
+				};
+
+		std::lock_guard<std::mutex> lk2(m_data_mut);
+		if (!m_fut && !m_config.deferred) {
+			InnerLaunch();
+		}
+	}
+#endif
+
+	
+
+private:
 #pragma region 模板任务内部实现
 	/**
 	* @brief: 一次性线程任务模块化实现
@@ -415,7 +459,7 @@ private:
 		auto args = deep_copy(*_Tar);
 		InnerRun(std::forward<_Target>(std::make_unique<decltype(args)>(args)));
 
-		std::lock_guard<std::mutex> lk(m_dataMutex);
+		std::lock_guard<std::mutex> lk(m_data_mut);
 		if (m_cb) {
 			m_cb->InnerLaunch();
 		}
@@ -433,13 +477,13 @@ private:
 		}
 
 		bool bStop = false;
+		auto getCurTime = [] { return std::chrono::high_resolution_clock::now(); };
+		
 		while (1) {
-			auto getCurTime = [] { return std::chrono::high_resolution_clock::now(); };
-
 			std::chrono::steady_clock::time_point startTime;
 
 			{
-				std::lock_guard<std::mutex> lk(m_dataMutex);
+				std::lock_guard<std::mutex> lk(m_data_mut);
 				if (m_config.timer_mode == Timer_Included) {
 					startTime = getCurTime();
 				}
@@ -453,7 +497,7 @@ private:
 			int32_t interval;
 
 			{
-				std::lock_guard<std::mutex> lk(m_dataMutex);
+				std::lock_guard<std::mutex> lk(m_data_mut);
 				if (m_config.timer_mode == Timer_Excluded) {
 					startTime = getCurTime();
 				}
@@ -463,7 +507,7 @@ private:
 
 			while (std::chrono::duration_cast<std::chrono::milliseconds>(getCurTime() - startTime).count() < interval) {
 				// 检测更新线程是否关闭
-				if (m_bStopThread) {
+				if (m_stop) {
 					bStop = true;
 					break;
 				}
@@ -472,12 +516,12 @@ private:
 				std::this_thread::sleep_for(std::chrono::milliseconds(check_time_slice));
 			}
 
-			if (bStop || m_bStopThread) {
+			if (bStop || m_stop) {
 				break;
 			}
 		}
 
-		std::lock_guard<std::mutex> lk(m_dataMutex);
+		std::lock_guard<std::mutex> lk(m_data_mut);
 		if (m_cb) {
 			m_cb->InnerLaunch();
 		}
@@ -511,7 +555,7 @@ private:
 				break;
 			}
 
-			if (m_bStopThread) {
+			if (m_stop) {
 				break;
 			}
 
@@ -522,7 +566,7 @@ private:
 			}
 		}
 
-		std::lock_guard<std::mutex> lk(m_dataMutex);
+		std::lock_guard<std::mutex> lk(m_data_mut);
 		if (m_cb) {
 			m_cb->InnerLaunch();
 		}
@@ -535,10 +579,10 @@ protected:
 	* @brief: 可通过继承后重载此函数实现线程池调用
 	* @experimental
 	*/
-	virtual FuturePtr LaunchAsync() {
+	virtual ustl::optional<std::future<void>> LaunchAsync() {
 		return
-			std::make_unique<std::future<void>>(
-				std::async(std::launch::async, *m_task)
+			ustl::make_optional<std::future<void>>(
+				std::async(std::launch::async, m_task.value())
 			);
 	}
 
@@ -633,7 +677,7 @@ protected:
 			}
 
 			if (ready) {
-				m_fut = nullptr;
+				m_fut = ustl::nullopt;
 			}
 		}
 		return ready;
@@ -647,14 +691,14 @@ protected:
 	* @todo: 优化启动时间片粒度，目前是固定100ms
 	*/
 	bool DelayCheck() {
-		std::unique_lock<std::mutex> lk(m_dataMutex);
+		std::unique_lock<std::mutex> lk(m_data_mut);
 		if (m_config.delay) {
 			int check_count = m_config.delay / kThreadTimeSlice + 1;
 			lk.unlock();
 			while (check_count) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(kThreadTimeSlice));
 
-				if (m_bStopThread) {
+				if (m_stop) {
 					return false;
 				}
 
@@ -708,11 +752,11 @@ protected:
 	};
 
 protected:
-	std::mutex m_dataMutex;
-	std::mutex m_stateMutex;
-	std::shared_ptr<std::function<void()>> m_task;
-	std::unique_ptr<std::future<void>> m_fut;
-	std::atomic<bool> m_bStopThread = false;
+	std::mutex m_data_mut;
+	std::mutex m_state_mut;
+	ustl::optional<std::function<void()>> m_task;
+	ustl::optional<std::future<void>> m_fut;
+	std::atomic<bool> m_stop = false;
 
 	ThreadConfig m_config;
 	std::unordered_map<ConfigType, std::string> m_confmap;
