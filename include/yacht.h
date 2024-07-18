@@ -15,6 +15,10 @@
 #include <unordered_map>
 #include <cstdlib>
 
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
 // 线程时间块
 constexpr int32_t kThreadTimeSlice = 100; // ms
 
@@ -123,17 +127,12 @@ enum ConfigType {
 * @brief: 线程安全对象, 已兼容普通函数，类成员函数，静态类成员函数及对应模板版本调用.
 * TODO: 使用fsm做封装, 负责线程状态切换的调度, 将状态同步交由fsm保证
 * TODO: 线程池支持
-* TODO: 完善接口错误号
-* TODO: 对placerholder支持
 */
 class HandyThread;
 using HandyThreadPtr			= std::unique_ptr<HandyThread>;
 #define MakeHandyThreadPtr(x)	std::make_unique<HandyThread>(x);
 
 class HandyThread {
-	using FuturePtr = std::unique_ptr<std::future<void>>;
-	using FuncPtr = std::unique_ptr<std::function<void()>>;
-
 public:
 	HandyThread() {}
 
@@ -177,31 +176,29 @@ public:
 	template<
 		class		_Fn,
 		class...	_Args
+#if _HAS_CXX17
+		, std::enable_if_t<std::is_invocable_v<_Fn, _Args...>, int> = 0
+#endif
 	>
-	decltype(auto) SetCallbackCtx(_Fn&& _Fx, _Args&&... _Ax) {
+	HandyThread* SetCallbackCtx(_Fn&& _Fx, _Args&&... _Ax) {
 		std::lock_guard<std::mutex> lk(m_data_mut);
 		m_cb = std::make_unique<HandyThread>();
 		m_cb->SetConfig(Deferred_Config, "1")
 			->SetConfig(Detached_Config, m_config.cb_detached ? "1" : "0")
-			->Run(std::forward<_Fn>(_Fx), std::forward<_Args>(_Ax)...);
+			->RunOnce(std::forward<_Fn>(_Fx), std::forward<_Args>(_Ax)...);
 		return this;
 	}
 
-	// template <
-	// 	class		_Fn,
-	// 	class...	_Args
-	// >
-	// static auto PlaceholderFuncWrapper(_Fn&& _Fx, _Args&&... _Ax) {
-	// 	return
-	// 		[this, func = std::bind(_Fx, std::forward<_Args>(_Ax)...)]() mutable -> void {
-	// 			TypicalRunOnceTask(
-	// 				std::make_unique<std::tuple<std::decay_t<_Fn>, std::decay_t<_Args>...>>(
-	// 					std::tuple_cat(std::make_tuple(_Fx), _Ax)
-	// 				)
-	// 			);
-	// 			return;
-	// 		};
-	// }
+#ifdef _WIN32
+	HandyThread* SetCallbackCtx(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+		std::lock_guard<std::mutex> lk(m_data_mut);
+		m_cb = std::make_unique<HandyThread>();
+		m_cb->SetConfig(Deferred_Config, "1")
+			->Run(Run_Once_Task,
+				[=] { ::PostMessage(hwnd, msg, wparam, lparam); });
+		return this;
+	}
+#endif
 
 	/**
 	 * @brief: (原神)启动
@@ -250,7 +247,7 @@ public:
 	/**
 	* @brief: 获取线程执行任务
 	*/
-	const auto GetTask() {
+	const auto& GetTask() {
 		Wait(-1);
 		return m_task;
 	}
@@ -258,10 +255,10 @@ public:
 	/**
 	* @brief: 启动deferred任务或再执行原任务
 	*/
-	template<class... _Placeholders>
-	void Launch(_Placeholders&&... _Phs) {
+	template<class... _Args>
+	void Launch(_Args&&... _Ax) {
 		std::lock_guard<std::mutex> lk(m_state_mut);
-		InnerLaunch(std::forward<_Placeholders>(_Phs)...);
+		InnerLaunch(std::forward<_Args>(_Ax)...);
 	}
 
 	/**
@@ -294,7 +291,7 @@ public:
 		return None_Task;
 	}
 
-private:
+public:
 	template <
 		class		_Fn,
 		class...	_Args
@@ -377,7 +374,11 @@ private:
 	template <
 		class		_Fn,
 		class...	_Args,
-		std::enable_if_t<std::is_convertible<decltype(std::invoke(std::declval<_Fn>(), std::declval<_Args>()...)), bool>::value, int> = 0
+		std::enable_if_t<
+			std::is_convertible_v<
+				decltype(std::invoke(std::declval<_Fn>(), std::declval<_Args>()...)), bool
+			>
+		, int> = 0
 	>
 	void RunTimerTask(_Fn&& _Fx, _Args&&... _Ax) {
 		std::lock_guard<std::mutex> lk(m_state_mut);
@@ -406,7 +407,11 @@ private:
 	template <
 		class		_Fn,
 		class...	_Args,
-		std::enable_if_t<std::is_void<decltype(std::invoke(std::declval<_Fn>(), std::declval<_Args>()...))>::value, int> = 0
+		std::enable_if_t<
+			std::is_void_v<
+				decltype(std::invoke(std::declval<_Fn>(), std::declval<_Args>()...))
+			>
+		, int> = 0
 	>
 	void RunTimerTask(_Fn&& _Fx, _Args&&... _Ax) {
 		std::lock_guard<std::mutex> lk(m_state_mut);
@@ -419,7 +424,7 @@ private:
 
 		m_stop = false;
 
-		auto fn_with_default_ret = [fx = std::move(_Fx)](_Args&&... args) {
+		auto fn_with_default_ret = [fx = std::forward<_Fn>(_Fx)](_Args&&... args) {
 			std::invoke(fx, std::forward<_Args>(args)...);
 			return true;
 			};
@@ -428,7 +433,7 @@ private:
 
 		m_task = [this, _Fx = std::forward<default_fn_type>(fn_with_default_ret), _Ax = std::make_tuple(std::forward<_Args>(_Ax)...)]() mutable -> void {
 					TypicalTimerTask(
-						std::make_unique<std::tuple<std::decay_t<default_fn_type >, std::decay_t<_Args>...>>(
+						std::make_unique<std::tuple<std::decay_t<default_fn_type>, std::decay_t<_Args>...>>(
 							std::tuple_cat(std::make_tuple(_Fx), _Ax)
 						)
 					);
@@ -440,8 +445,6 @@ private:
 		}
 	}
 #endif
-
-	
 
 private:
 #pragma region 模板任务内部实现
@@ -512,7 +515,11 @@ private:
 					break;
 				}
 
+#ifdef max
+				auto check_time_slice = max(interval / 10, 1);
+#else
 				auto check_time_slice = std::max(interval / 10, 1);
+#endif
 				std::this_thread::sleep_for(std::chrono::milliseconds(check_time_slice));
 			}
 
@@ -526,52 +533,6 @@ private:
 			m_cb->InnerLaunch();
 		}
 	}
-
-	/**
-	* @brief: 限时任务模块化实现
-	* @todo: 有需求可优化轮询时间粒度
-	*/
-	template <
-		class _Target
-	>
-	void TypicalTaskWithTimeout(int32_t time_limit, _Target&& _Tar) {
-		namespace sc = std::chrono;
-
-		if (!DelayCheck()) {
-			return;
-		}
-
-		auto real_task = [this, args = deep_copy(*_Tar)] {
-				InnerRun(std::forward<_Target>(std::make_unique<decltype(args)>(args)));
-			};
-
-		auto real_fut = std::async(std::launch::async, real_task);
-
-		auto cur_time = [] { return std::chrono::high_resolution_clock::now(); };
-		auto start_time = cur_time();
-		while (1) {
-			auto elapsed_time = sc::duration_cast<sc::milliseconds>(start_time - cur_time()).count();
-			if (elapsed_time > time_limit) {
-				break;
-			}
-
-			if (m_stop) {
-				break;
-			}
-
-			// @todo: 提供用户接口做额外的条件判定和状态处理?
-
-			if (real_fut.wait_for(100ms) == std::future_status::ready) {
-				break;
-			}
-		}
-
-		std::lock_guard<std::mutex> lk(m_data_mut);
-		if (m_cb) {
-			m_cb->InnerLaunch();
-		}
-	}
-
 #pragma endregion	// region 模板任务内部实现
 
 protected:
@@ -623,28 +584,6 @@ protected:
 
 protected:
 #pragma region inner函数无锁实现
-	//template<class... _Placeholders>
-	//void InnerLaunch(_Placeholders&&... _Phs) {
-	//	if (m_task) {
-	//		if (!m_fut) {
-	//			m_fut = 
-	//				std::make_unique<std::future<void>>(
-	//					std::async(
-	//						std::launch::async, 
-	//						&HandyThread::InnerLaunchPhHelper<_Placeholders...>,
-	//						m_task,
-	//						std::forward<_Placeholders>(_Phs)...
-	//					)
-	//				);
-	//		}
-	//		else {
-	//			assert(0);
-	//			// TODO
-	//			// HandyThread::InnerLaunchPhHelper(m_task, std::forward<_Placeholders>(_Phs)...);
-	//		}
-	//	}
-	//}
-
 	void InnerLaunch() {
 		if (!m_task) {
 			assert(0);
@@ -711,14 +650,6 @@ protected:
 
 protected:
 #pragma region 模板util
-	/**
-	* @brief: placeholder函数调用helper
-	*/
-	template<class... _Placeholders>
-	static void InnerLaunchPhHelper(std::shared_ptr<std::function<void()>> task, _Placeholders&&... _Phs) {
-		std::invoke(*task, std::forward<_Placeholders>(_Phs)...);
-	}
-
 	/**
 	* @brief: 将变长参数最终解包后调用
 	*/
