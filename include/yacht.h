@@ -109,14 +109,14 @@ enum ConfigType {
 	* @brief: 任务立即启动/延迟启动(延迟启动时delay延迟依然生效)
 	*/
 	Deferred_Config,
-	/**
-	* @brief: detach任务
-	*/
-	Detached_Config,
-	/**
-	* @brief: detach callback任务
-	*/
-	Cb_Detached_Config,
+	// /**
+	// * @brief: detach任务
+	// */
+	// Detached_Config,
+	// /**
+	// * @brief: detach callback任务
+	// */
+	// Cb_Detached_Config,
 	/**
 	* @brief: count
 	*/
@@ -184,7 +184,7 @@ public:
 		std::lock_guard<std::mutex> lk(m_data_mut);
 		m_cb = std::make_unique<HandyThread>();
 		m_cb->SetConfig(Deferred_Config, "1")
-			->SetConfig(Detached_Config, m_config.cb_detached ? "1" : "0")
+			// ->SetConfig(Detached_Config, m_config.cb_detached ? "1" : "0")
 			->RunOnce(std::forward<_Fn>(_Fx), std::forward<_Args>(_Ax)...);
 		return this;
 	}
@@ -227,7 +227,7 @@ public:
 	void Stop() {
 		std::unique_lock<std::mutex> lk(m_state_mut);
 		if (m_task) {
-			if (!m_config.detached && m_fut && m_fut->valid()) {
+			if (/*!m_config.detached &&*/ m_fut && m_fut->valid()) {
 				m_stop = true;
 				m_fut->wait();
 				m_fut = ustl::nullopt;
@@ -571,6 +571,7 @@ protected:
 			m_config.deferred = std::atoi(m_confmap[Deferred_Config].data());
 		}
 		if (has_config(m_confmap, Detached_Config)) {
+			assert(0);
 			m_config.detached = std::atoi(m_confmap[Detached_Config].data());
 		}
 

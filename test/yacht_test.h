@@ -118,3 +118,8 @@ TEST_F(YachtTest, Yacht_Args_MemFn_RunTimer_Task_With_MemFn_Callback) {
 }
 
 
+TEST_F(YachtTest, test_case) {
+	auto t = MakeHandyThreadPtr();
+	auto dummy = std::make_shared<Dummy>(1, 2);
+	t->Run(Run_Once_Task, [dummy] { dummy->speak(); });
+}
