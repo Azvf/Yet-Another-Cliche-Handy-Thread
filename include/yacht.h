@@ -570,10 +570,10 @@ protected:
 		if (has_config(m_confmap, Deferred_Config)) {
 			m_config.deferred = std::atoi(m_confmap[Deferred_Config].data());
 		}
-		if (has_config(m_confmap, Detached_Config)) {
-			assert(0);
-			m_config.detached = std::atoi(m_confmap[Detached_Config].data());
-		}
+		// if (has_config(m_confmap, Detached_Config)) {
+		// 	assert(0);
+		// 	m_config.detached = std::atoi(m_confmap[Detached_Config].data());
+		// }
 
 		ExtendConfigParse();
 	}
