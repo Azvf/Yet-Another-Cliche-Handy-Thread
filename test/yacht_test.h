@@ -41,7 +41,7 @@ TEST_F(YachtTest, Yacht_VoidRet_MemFn_RunOnce_Task_With_MemFn_Callback) {
 	auto handler = std::make_shared<Handler>();
 	t->SetCallbackCtx([dummy, handler] { handler->Handle(dummy->j); })
 		->Run(Run_Once_Task, [dummy] { dummy->speak(); });
-	Sleep(300);
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
 }
 
 TEST_F(YachtTest, Yacht_IntRet_MemFn_RunOnce_Task_With_MemFn_Callback) {
@@ -58,7 +58,7 @@ TEST_F(YachtTest, Yacht_IntRet_MemFn_RunOnce_Task_With_MemFn_Callback) {
 				dummy->speak();
 				return 1;
 			});
-		Sleep(300);
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
 }
 
 TEST_F(YachtTest, Yacht_VoidRet_MemFn_RunTimer_Task_With_MemFn_Callback) {
@@ -84,7 +84,7 @@ TEST_F(YachtTest, Yacht_IntRet_MemFn_RunTimer_Task_With_MemFn_Callback) {
 				dummy->speak();
 				return 1;
 			});
-		Sleep(300);
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
 }
 
 TEST_F(YachtTest, Yacht_Args_MemFn_RunOnce_Task_With_MemFn_Callback) {
@@ -99,7 +99,7 @@ TEST_F(YachtTest, Yacht_Args_MemFn_RunOnce_Task_With_MemFn_Callback) {
 			return 1;
 		})
 		->Run(Run_Once_Task, &Dummy::speak3, &(*dummy), std::ref(x), std::ref(y));
-		Sleep(300);
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
 }
 
 TEST_F(YachtTest, Yacht_Args_MemFn_RunTimer_Task_With_MemFn_Callback) {
@@ -114,7 +114,7 @@ TEST_F(YachtTest, Yacht_Args_MemFn_RunTimer_Task_With_MemFn_Callback) {
 			return 1;
 		})
 		->Run(Timer_Task, &Dummy::speak3, &(*dummy), std::ref(x), std::ref(y));
-		Sleep(300);
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
 }
 
 
