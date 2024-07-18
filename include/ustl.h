@@ -4,6 +4,8 @@
 #include <utility>
 #include <cassert>
 
+#include "template_util.h"
+
 namespace ustl {
 	struct nullopt_t {
 		constexpr explicit nullopt_t() = default;
@@ -38,22 +40,77 @@ namespace ustl {
 			T value_;
 		};
 
+		template <class Ty2>
+		using allow_direct_conversion = 
+			std::bool_constant<
+				std::conjunction_v<
+					std::negation<std::is_same<ustl::remove_cvref_t<Ty2>, optional>>,
+					std::negation<std::is_same<ustl::remove_cvref_t<Ty2>, in_place_t>>,
+					std::negation<
+						std::conjunction<
+							std::is_same<std::remove_cv_t<T>, bool>, 
+							ustl::is_specialization<ustl::remove_cvref_t<Ty2>, optional>
+						>
+					>,
+					std::is_constructible<T, Ty2>
+				>
+			>;
+
+		template <class _Ty2>
+		struct allow_unwrapping : 
+			std::bool_constant<
+				std::disjunction_v<
+					std::is_same<std::remove_cv_t<T>, bool>,
+					std::negation<
+						std::disjunction<
+							//std::is_same<T, _Ty2>, 
+							std::is_constructible<T, optional<_Ty2>&>,
+							std::is_constructible<T, const optional<_Ty2>&>, 
+							std::is_constructible<T, const optional<_Ty2>>,
+							std::is_constructible<T, optional<_Ty2>>, 
+							std::is_convertible<optional<_Ty2>&, T>,
+							std::is_convertible<const optional<_Ty2>&, T>, 
+							std::is_convertible<const optional<_Ty2>, T>,
+							std::is_convertible<optional<_Ty2>, T>
+						>
+					>
+				>
+			> {};
+
 	public:
 		optional() : has_value_(false) {}
 
 		optional(nullopt_t) : has_value_(false) {}
 
-		optional(const T& val) : has_value_(true), value_(val) {}
-		
-		optional(T&& val) : has_value_(true), value_(std::move(val)) {}
+		template <
+			class Ty2 = T, 
+			std::enable_if_t<allow_direct_conversion<Ty2>::value, int> = 0
+		>
+		optional(Ty2&& val) : has_value_(true), value_(std::forward<Ty2>(val)) {}
 
-		optional(const optional& other) : has_value_(other.has_value_) {
+		template <class Ty2,
+			std::enable_if_t<
+				std::conjunction_v<
+					allow_unwrapping<Ty2>/*, 
+					std::is_constructible<T, const Ty2&>*/
+				>
+			, int> = 0
+		>
+		optional(const optional<Ty2>& other) : has_value_(other.has_value_) {
 			if (has_value_) {
 				new (&this->value_) T(other.value_);
 			}
 		}
 
-		optional(optional&& other) : has_value_(other.has_value_) {
+		template <class Ty2,
+			std::enable_if_t<
+				std::conjunction_v<
+					allow_unwrapping<Ty2>/*,
+					std::is_constructible<T, const Ty2&>*/
+				>
+			, int> = 0
+		>
+		optional(optional<Ty2>&& other) : has_value_(other.has_value_) {
 			if (has_value_) {
 				new (&this->value_) T(std::move(other.value_));
 			}
@@ -72,7 +129,7 @@ namespace ustl {
 		}
 
 	public:
-		optional& operator=(const optional& other) {
+		optional& operator=(const optional& other) noexcept {
 			if (this == &other) {
 				return *this;
 			}
@@ -90,7 +147,7 @@ namespace ustl {
 			return *this;
 		}
 
-		optional& operator=(optional&& other) {
+		optional& operator=(optional&& other) noexcept {
 			if (this == &other) {
 				return *this;
 			}
@@ -108,56 +165,65 @@ namespace ustl {
 			return *this;
 		}
 
-		optional& operator=(const T& val) {
+		optional& operator=(const T& val) noexcept {
 			new (&value_) T(val);
 			has_value_ = true;
 			return *this;
 		}
 
-		optional& operator=(T&& val) {
+		template <class T2 = T>
+		optional& operator=(T2&& val) noexcept {
 			new (&value_) T(std::move(val));
 			has_value_ = true;
 			return *this;
 		}
 
-		optional& operator=(nullopt_t) {
+		optional& operator=(nullopt_t) noexcept {
 			return optional<T>();
 		}
 
-		bool operator==(const T& val) {
+		bool operator==(const T& val) noexcept {
 			if (has_value_) {
 				return value_ == val;
 			}
 			return false;
 		}
 
-		bool operator==(T&& val) {
+		bool operator==(T&& val) noexcept {
 			if (has_value_) {
 				return value_ == val;
 			}
 			return false;
 		}
 
-		bool operator!=(const T& val) {
+		bool operator!=(const T& val) noexcept {
 			if (has_value_) {
 				return value_ != val;
 			}
 			return false;
 		}
 
-		bool operator!=(T&& val) {
+		bool operator!=(T&& val) noexcept {
 			if (has_value_) {
 				return value_ != val;
 			}
 			return false;
 		}
 
-		T* operator->() {
+		T* operator->() noexcept {
 			return const_cast<T*>(&value());
 		}
 
-		explicit operator bool() {
+		explicit operator bool() noexcept {
 			return has_value_;
+		}
+
+		T& operator*() noexcept {
+			return value_;
+		}
+
+		const T& operator*() const noexcept {
+			return value_;
 		}
 
 	public:
@@ -185,8 +251,8 @@ namespace ustl {
 		}
 
 		template<
-			class T2,
-			std::enable_if_t<std::is_convertible_v<T, T2>, int> = 0
+			class T2/*,
+			std::enable_if_t<std::is_convertible_v<T, T2>, int> = 0*/
 		>
 		T value_or(T2&& default_value) const& {
 			if (!has_value_) {
@@ -196,8 +262,8 @@ namespace ustl {
 		}
 
 		template<
-			class T2,
-			std::enable_if_t<std::is_convertible_v<T, T2>, int> = 0
+			class T2/*,
+			std::enable_if_t<std::is_convertible_v<T, T2>, int> = 0*/
 		>
 		T value_or(T2&& default_value) && {
 			if (!has_value_) {
@@ -207,7 +273,7 @@ namespace ustl {
 		}
 
 		void reset() {
-			*this = {};
+			*this = optional<T>();
 		}
 
 		void reset(const optional& other) {
@@ -583,6 +649,9 @@ namespace ustl {
 			}
 
 			// dealloc old space
+			for (int i = 0; i < old_cap; i++) {
+				old_data[i].~T();
+			}
 			m_alloc.deallocate(old_data, old_cap);
 		}
 
